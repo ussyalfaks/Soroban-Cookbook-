@@ -2,7 +2,7 @@
 
 #![cfg(test)]
 use super::*;
-use soroban_sdk::{symbol_short, testutils::Events as _, Env, Symbol, TryFromVal, log};
+use soroban_sdk::{log, symbol_short, testutils::Events as _, Env, Symbol, TryFromVal};
 
 #[test]
 fn test_emit_set_number() {
@@ -16,7 +16,6 @@ fn test_emit_set_number() {
     let events = env.events().all();
     assert!(!events.is_empty(), "one event should be emitted");
 }
-
 
 #[test]
 fn test_emit_set_number_details() {
@@ -75,7 +74,7 @@ fn test_emit_increment_number() {
     let event = events.get(1).unwrap();
     let (_, _, data) = event;
     let payload: u32 = u32::try_from_val(&env, &data).unwrap();
-    assert_eq!(payload, number+1, "data do not match")
+    assert_eq!(payload, number + 1, "data do not match")
 }
 
 #[test]
@@ -94,9 +93,8 @@ fn test_emit_decrement_number() {
     let event = events.get(1).unwrap();
     let (_, _, data) = event;
     let payload: u32 = u32::try_from_val(&env, &data).unwrap();
-    assert_eq!(payload, number-1, "data do not match")
+    assert_eq!(payload, number - 1, "data do not match")
 }
-
 
 #[test]
 fn test_emit_decrement_number_details() {
