@@ -1,8 +1,6 @@
 #![no_std]
 
-use soroban_sdk::{contract, contractimpl, symbol_short, Address, Env, Symbol};
-
-const ADMIN_KEY: Symbol = symbol_short!("admin");
+use soroban_sdk::{contract, contractimpl, symbol_short, Env};
 
 #[contract]
 pub struct Contract;

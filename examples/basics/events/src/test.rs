@@ -2,7 +2,7 @@
 
 #![cfg(test)]
 use super::*;
-use soroban_sdk::{log, symbol_short, testutils::Events as _, Env, Symbol, TryFromVal};
+use soroban_sdk::{symbol_short, testutils::Events as _, Env, Symbol, TryFromVal};
 
 #[test]
 fn test_emit_set_number() {
