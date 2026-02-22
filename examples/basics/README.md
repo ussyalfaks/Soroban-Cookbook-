@@ -28,6 +28,12 @@ Emit and handle events for off-chain monitoring.
 
 **Concepts:** Event emission, indexing, event topics
 
+### [05-auth-context](./05-auth-context/)
+
+Understand the execution context, invoker vs current address, and proxy patterns.
+
+**Concepts:** `env.invoker()`, `env.current_contract_address()`, proxy calls
+
 ### [05-error-handling](./05-error-handling/)
 
 Proper error handling and custom error types.
@@ -65,7 +71,8 @@ We recommend following the examples in order:
 2. Learn storage patterns for data persistence
 3. Master authentication for security
 4. Add events for observability
-5. Handle errors gracefully
+5. Learn execution context to write secure proxy and cross-contract calls
+6. Handle errors gracefully
 6. Explore all available data types
 
 ## Next Steps

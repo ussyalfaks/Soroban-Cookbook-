@@ -76,6 +76,10 @@ jobs:
           path: target
           key: ${{ runner.os }}-target-${{ hashFiles('**/Cargo.lock') }}
 
+      - name: Downgrade time crate for rust 1.74
+        if: matrix.rust == '1.74'
+        run: cargo update -p time --precise 0.3.36 && cargo update -p time-core --precise 0.1.2 || echo "No fix needed"
+
       - name: Run tests
         run: cargo test --workspace --all-features
 
