@@ -8,6 +8,40 @@
 //! - Multiple event types with distinct topics
 //!
 //! ## Query-Friendly Design Patterns
+//! Demonstrates how to emit well-structured events in Soroban contracts using:
+//!
+//! - **Custom event types** – `#[contracttype]` enums/structs as event data
+//! - **Multiple topics** – up to 4 topic slots (contract address consumes none)
+//! - **Indexed parameters** – placing searchable fields in topics, payload in data
+//! - **Naming conventions** – `(contract_name, action)` as the first two topics
+//!
+//! ## Soroban Event Anatomy
+//!
+//! ```text
+//! env.events().publish(
+//!     (topic_1, topic_2, topic_3, topic_4),  // up to 4 topics; indexed for off-chain search
+//!     data_payload,                           // arbitrary SCVal; not indexed
+//! );
+//! ```
+//!
+//! **Topics** should contain discrete, filterable identifiers (contract name,
+//! action type, primary key, secondary key).  **Data** holds the rich payload
+//! that off-chain consumers decode after matching on topics.
+//!
+//! ## Event Naming Convention
+//!
+//! Adopt a consistent `(contract, action, [key...])` topic layout so that
+//! indexers and monitoring tools can build efficient filters:
+//!
+//! | Topic slot | Purpose            | Example              |
+//! |------------|--------------------|----------------------|
+//! | 0          | Contract namespace | `"events"`           |
+//! | 1          | Action name        | `"transfer"`         |
+//! | 2          | Primary index      | `sender: Address`    |
+//! | 3          | Secondary index    | `recipient: Address` |
+//!
+//! ## Query-Friendly Design Patterns
+//!
 //! Off-chain indexers (e.g., Stellar Horizon, custom listeners) filter events
 //! by topic position. Designing topics intentionally lets callers narrow results
 //! without scanning every event.
@@ -99,6 +133,26 @@ pub struct ConfigUpdateEventData {
     pub new_value: u64,
 }
 
+/// Payload for an admin-action event.
+#[contracttype]
+pub struct AdminActionEventData {
+    /// Identifier of the specific action performed.
+    pub action: Symbol,
+    /// Timestamp when the action was executed.
+    pub timestamp: u64,
+}
+
+/// Payload for an audit-trail event.
+#[contracttype]
+pub struct AuditTrailEventData {
+    /// Free-form description or reference tag.
+    pub details: Symbol,
+    /// Ledger timestamp at emission time.
+    pub timestamp: u64,
+    /// Ledger sequence number for ordering.
+    pub sequence: u32,
+}
+
 // ---------------------------------------------------------------------------
 // Contract
 // ---------------------------------------------------------------------------
@@ -115,11 +169,6 @@ pub struct EventsContract;
 
 #[contractimpl]
 impl EventsContract {
-    // ==================== BASIC EMISSION ====================
-
-    /// Emits a simple event with topic ("simple",) and data value.
-    ///
-    /// Off-chain query: filter topic[0] == "simple"
     // -----------------------------------------------------------------------
     // Example 1 – Transfer event (4 topics + structured data)
     // -----------------------------------------------------------------------
@@ -140,7 +189,6 @@ impl EventsContract {
     /// Placing both addresses in topics means an off-chain indexer can
     /// efficiently retrieve all transfers _to_ or _from_ a given address.
     pub fn transfer(env: Env, sender: Address, recipient: Address, amount: i128, memo: u64) {
-        // All four topic slots used: namespace · action · sender · recipient
         env.events().publish(
             (CONTRACT_NS, symbol_short!("transfer"), sender, recipient),
             TransferEventData { amount, memo },
@@ -176,33 +224,89 @@ impl EventsContract {
     }
 
     // -----------------------------------------------------------------------
-    // Preserved simple helpers (kept for backward-compatibility)
+    // Example 3 – Admin action event (3 topics + structured data)
+    // -----------------------------------------------------------------------
+
+    /// Emit an admin-action event for tracking privileged operations.
+    ///
+    /// **Topic layout (3 topics):**
+    /// | Index | Value          | Role               |
+    /// |-------|----------------|--------------------|
+    /// | 0     | `"events"`     | Contract namespace |
+    /// | 1     | `"admin"`      | Action category    |
+    /// | 2     | `admin: Address` | Indexed admin    |
+    ///
+    /// **Data:** `AdminActionEventData { action, timestamp }`
+    pub fn admin_action(env: Env, admin: Address, action: Symbol) {
+        let timestamp = env.ledger().timestamp();
+        env.events().publish(
+            (CONTRACT_NS, symbol_short!("admin"), admin),
+            AdminActionEventData { action, timestamp },
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Example 4 – Audit trail event (4 topics + structured data)
+    // -----------------------------------------------------------------------
+
+    /// Emit a comprehensive audit-trail event for full accountability tracking.
+    ///
+    /// **Topic layout (4 topics):**
+    /// | Index | Value            | Role                |
+    /// |-------|------------------|---------------------|
+    /// | 0     | `"events"`       | Contract namespace  |
+    /// | 1     | `"audit"`        | Action category     |
+    /// | 2     | `actor: Address` | Who performed action|
+    /// | 3     | `action: Symbol` | What was performed  |
+    ///
+    /// **Data:** `AuditTrailEventData { details, timestamp, sequence }`
+    ///
+    /// This pattern provides a complete audit trail: who did what, when,
+    /// with additional context in the data payload. Off-chain indexers can
+    /// filter by actor (topic[2]) or action type (topic[3]).
+    pub fn audit_trail(env: Env, actor: Address, action: Symbol, details: Symbol) {
+        let timestamp = env.ledger().timestamp();
+        let sequence = env.ledger().sequence();
+        env.events().publish(
+            (CONTRACT_NS, symbol_short!("audit"), actor, action),
+            AuditTrailEventData {
+                details,
+                timestamp,
+                sequence,
+            },
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Simple helpers (kept for backward-compatibility)
     // -----------------------------------------------------------------------
 
     /// Emit a simple one-topic event – demonstrates the minimal event form.
+    ///
+    /// Off-chain query: filter topic[0] == "simple"
     pub fn emit_simple(env: Env, value: u64) {
         env.events().publish((symbol_short!("simple"),), value);
     }
 
-    /// Emits a tagged event with topics ("tagged", tag) and data value.
+    /// Emit a tagged two-topic event.
     ///
     /// Off-chain query: filter topic[0] == "tagged" AND topic[1] == <tag>
-    /// Emit a tagged two-topic event.
     pub fn emit_tagged(env: Env, tag: Symbol, value: u64) {
         env.events().publish((symbol_short!("tagged"), tag), value);
     }
 
-    /// Emits `count` events each with topics ("multi", index) and data index.
+    /// Emit `count` indexed events – demonstrates a loop emission pattern.
     ///
     /// Demonstrates sequential event emission within a single invocation.
-    /// Emit `count` indexed events – demonstrates a loop emission pattern.
     pub fn emit_multiple(env: Env, count: u32) {
         for i in 0..count {
             env.events().publish((symbol_short!("multi"), i), i as u64);
         }
     }
 
-    // ==================== QUERY-FRIENDLY PATTERNS ====================
+    // -----------------------------------------------------------------------
+    // Query-friendly patterns
+    // -----------------------------------------------------------------------
 
     /// Emits a transfer event following the 3-topic pattern:
     ///   topic[0] = "transfer"   — filters all transfer events
@@ -216,8 +320,6 @@ impl EventsContract {
     ///   • All receives by Bob:          topic[0] == "transfer" AND topic[2] == Bob
     ///   • Alice → Bob transfers only:   topic[0] == "transfer" AND topic[1] == Alice AND topic[2] == Bob
     pub fn emit_transfer(env: Env, from: Address, to: Address, amount: u64) {
-        // Put action name first so every transfer is discoverable with one filter.
-        // Put from/to next so indexers can build per-address history efficiently.
         env.events()
             .publish((symbol_short!("transfer"), from, to), amount);
     }
@@ -235,9 +337,14 @@ impl EventsContract {
     ///   • Catch swaps on one pool   → all three topics fixed
     ///
     /// Keep category and action as short Symbols (≤ 9 chars, symbol_short!).
-    pub fn emit_namespaced(env: Env, category: Symbol, action: Symbol, pool_id: Symbol, amount: u64) {
-        env.events()
-            .publish((category, action, pool_id), amount);
+    pub fn emit_namespaced(
+        env: Env,
+        category: Symbol,
+        action: Symbol,
+        pool_id: Symbol,
+        amount: u64,
+    ) {
+        env.events().publish((category, action, pool_id), amount);
     }
 
     /// Emits a status-change event with a 4-topic layout:
@@ -253,8 +360,10 @@ impl EventsContract {
     ///   • Specific old → new transitions for audit trails
     pub fn emit_status_change(env: Env, entity_id: Symbol, old_status: Symbol, new_status: Symbol) {
         let ledger = env.ledger().sequence();
-        env.events()
-            .publish((symbol_short!("status"), entity_id, old_status, new_status), ledger);
+        env.events().publish(
+            (symbol_short!("status"), entity_id, old_status, new_status),
+            ledger,
+        );
     }
 }
 
