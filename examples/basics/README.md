@@ -18,15 +18,21 @@ Learn how to store and retrieve data in Soroban contracts.
 
 ### [03-authentication](./03-authentication/)
 
-Understand authorization and authentication patterns.
+Build custom authorization logic beyond basic `require_auth()`.
 
-**Concepts:** `require_auth()`, address verification, multi-sig patterns
+**Concepts:** Role-based access control, time-locks, cooldowns, contract state gating
 
 ### [04-events](./04-events/)
 
 Emit and handle events for off-chain monitoring.
 
 **Concepts:** Event emission, indexing, event topics
+
+### [05-auth-context](./05-auth-context/)
+
+Understand the execution context, invoker vs current address, and proxy patterns.
+
+**Concepts:** `env.invoker()`, `env.current_contract_address()`, proxy calls
 
 ### [05-error-handling](./05-error-handling/)
 
@@ -65,7 +71,8 @@ We recommend following the examples in order:
 2. Learn storage patterns for data persistence
 3. Master authentication for security
 4. Add events for observability
-5. Handle errors gracefully
+5. Learn execution context to write secure proxy and cross-contract calls
+6. Handle errors gracefully
 6. Explore all available data types
 
 ## Next Steps

@@ -1,34 +1,111 @@
+//! # Hello World Soroban Contract
+//!
+//! This is the simplest possible Soroban smart contract. It demonstrates the
+//! fundamental building blocks every Soroban developer needs to understand:
+//!
+//! - How to define a contract struct with `#[contract]`
+//! - How to expose contract functions with `#[contractimpl]`
+//! - How to use the `Env` parameter to access the blockchain environment
+//! - How to work with Soroban SDK types (`Symbol`, `String`)
+//! - How to perform `no_std`-safe string manipulation on-chain
+
+// Soroban contracts must be `no_std` – they run inside the Wasm sandbox and
+// have no access to the Rust standard library.
 #![no_std]
 
-use soroban_sdk::{contract, contractimpl, symbol_short, vec, Env, Symbol, Vec};
+// Import the required SDK symbols.
+//
+// `contract`     – attribute that marks a struct as the contract entry-point.
+// `contractimpl` – attribute that exposes an `impl` block's public methods as
+//                  callable contract functions.
+// `Env`          – the gateway to every on-chain capability (storage, events,
+//                  crypto, …).  The host injects it automatically; callers
+//                  never supply it.
+// `String`       – a UTF-8 string managed by the host (not std's String).
+// `Symbol`       – a compact, interned identifier (≤ 32 alphanumeric / '_'
+//                  chars).  Short symbols (≤ 9 chars) are bit-packed into a
+//                  `Val` with zero host allocation.
+// `SymbolStr`    – a zero-alloc `[u8; 32]` stack buffer that stores a symbol's
+//                  characters as plain ASCII, and can be dereferenced as `&str`.
+//                  Available in `no_std` because it lives entirely on the stack.
+// `TryFromVal`   – fallible conversion trait used to materialise a `SymbolStr`
+//                  from a `Symbol` value in the host environment.
+use soroban_sdk::{contract, contractimpl, Env, String, Symbol, SymbolStr, TryFromVal};
 
+/// The contract type.
+///
+/// Soroban contracts are plain unit structs tagged with `#[contract]`.  The
+/// macro registers the type with the host so that invocations are routed to
+/// the `#[contractimpl]` block below.
 #[contract]
 pub struct HelloContract;
 
+/// Public interface of `HelloContract`.
 #[contractimpl]
 impl HelloContract {
-    pub fn hello(env: Env, to: Symbol) -> Vec<Symbol> {
-        vec![&env, symbol_short!("Hello"), to]
+    /// Return a greeting for the given name.
+    ///
+    /// # Arguments
+    ///
+    /// * `env` – the execution environment, provided automatically by the host.
+    /// * `to`  – the name to greet as a `Symbol`.  `Symbol` is preferred here
+    ///           because it is the most gas-efficient way to pass short
+    ///           identifiers across the host–guest boundary.
+    ///
+    /// # Returns
+    ///
+    /// A `soroban_sdk::String` of the form `"Hello, <to>!"`.
+    ///
+    /// # Example
+    ///
+    /// ```text
+    /// hello(symbol_short!("World")) -> "Hello, World!"
+    /// ```
+    pub fn hello(env: Env, to: Symbol) -> String {
+        // In `no_std` Wasm we cannot use `format!` or the standard `String`.
+        // Instead we:
+        //
+        //   1. Convert the caller-supplied `Symbol` to a `SymbolStr` – a
+        //      stack-allocated `[u8; 32]` wrapper around the symbol's ASCII
+        //      bytes.  This is the idiomatic, heap-free way to read a Symbol's
+        //      character data inside a Wasm contract.
+        //
+        //   2. Build the full greeting in a fixed-size stack buffer that is
+        //      large enough for the maximum possible output:
+        //         "Hello, " (7 bytes) + symbol (≤ 32 bytes) + "!" (1 byte) = 40 bytes.
+        //
+        //   3. Convert the stack buffer slice to a `soroban_sdk::String` using
+        //      `String::from_bytes`, which copies the bytes into host memory.
+
+        // `SymbolStr::try_from_val` calls into the host for large symbols
+        // (> 9 chars, stored as host objects) and decodes the 6-bit codes
+        // inline for small symbols.  Both paths are available in `no_std`.
+        let name: SymbolStr = SymbolStr::try_from_val(&env, &to.to_symbol_val())
+            .unwrap_or_else(|_| panic!("symbol conversion failed"));
+
+        // `AsRef<str>` on `SymbolStr` gives a `&str` view into the buffer.
+        let name_str: &str = name.as_ref();
+
+        // Build "Hello, <name>!" in a single fixed-size stack buffer.
+        const PREFIX: &[u8] = b"Hello, ";
+        const SUFFIX: &[u8] = b"!";
+        // Maximum: 7 + 32 + 1 = 40 bytes.
+        let mut buf = [0u8; 40];
+
+        let name_bytes = name_str.as_bytes();
+        let name_len = name_bytes.len();
+
+        buf[..PREFIX.len()].copy_from_slice(PREFIX);
+        buf[PREFIX.len()..PREFIX.len() + name_len].copy_from_slice(name_bytes);
+        buf[PREFIX.len() + name_len] = SUFFIX[0];
+
+        let total = PREFIX.len() + name_len + SUFFIX.len();
+
+        // `String::from_bytes` uploads the byte slice to the host, producing a
+        // `soroban_sdk::String` that callers can inspect.
+        String::from_bytes(&env, &buf[..total])
     }
 }
 
+// Pull in the dedicated test module.
 mod test;
-
-#[cfg(test)]
-mod smoke_tests {
-    use super::*;
-    use soroban_sdk::{symbol_short, vec, Env};
-
-    #[test]
-    fn smoke_hello_world() {
-        let env = Env::default();
-        let contract_id = env.register_contract(None, HelloContract);
-        let client = HelloContractClient::new(&env, &contract_id);
-
-        let result = client.hello(&symbol_short!("World"));
-        assert_eq!(
-            result,
-            vec![&env, symbol_short!("Hello"), symbol_short!("World")]
-        );
-    }
-}

@@ -116,14 +116,7 @@
               }
             ],
             "data": {
-              "vec": [
-                {
-                  "symbol": "Hello"
-                },
-                {
-                  "symbol": "Alice"
-                }
-              ]
+              "string": "Hello, Alice!"
             }
           }
         }
@@ -172,14 +165,7 @@
               }
             ],
             "data": {
-              "vec": [
-                {
-                  "symbol": "Hello"
-                },
-                {
-                  "symbol": "Bob"
-                }
-              ]
+              "string": "Hello, Bob!"
             }
           }
         }
@@ -228,14 +214,7 @@
               }
             ],
             "data": {
-              "vec": [
-                {
-                  "symbol": "Hello"
-                },
-                {
-                  "symbol": "Stellar"
-                }
-              ]
+              "string": "Hello, Stellar!"
             }
           }
         }
