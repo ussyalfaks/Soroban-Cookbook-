@@ -500,3 +500,144 @@ fn test_state_frozen_blocks_action() {
     client.set_state(&admin, &ContractState::Frozen);
     client.active_only_action(&admin);
 }
+
+// ---------------------------------------------------------------------------
+// 8. Multi-party authorization tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_multi_party_role_hierarchy() {
+    let (env, _contract_id, admin, client) = setup_initialized_contract();
+    let moderator = Address::generate(&env);
+    let user = Address::generate(&env);
+
+    client.grant_role(&admin, &moderator, &Role::Moderator);
+    client.grant_role(&admin, &user, &Role::User);
+
+    assert!(client.has_role(&admin, &Role::Admin));
+    assert!(client.has_role(&moderator, &Role::Moderator));
+    assert!(client.has_role(&user, &Role::User));
+
+    let admin_result = client.admin_action(&admin, &10);
+    assert_eq!(admin_result, 20);
+
+    let mod_result = client.moderator_action(&moderator, &10);
+    assert_eq!(mod_result, 110);
+}
+
+#[test]
+fn test_multi_party_cooldown_isolation() {
+    let (env, _contract_id, admin, client) = setup_initialized_contract();
+    let user1 = Address::generate(&env);
+    let user2 = Address::generate(&env);
+
+    client.set_cooldown(&admin, &100);
+
+    env.ledger().with_mut(|li| li.timestamp = 200);
+    client.cooldown_action(&user1);
+
+    env.ledger().with_mut(|li| li.timestamp = 210);
+    let result = client.cooldown_action(&user2);
+    assert_eq!(result, 210);
+}
+
+#[test]
+#[should_panic(expected = "Not admin")]
+fn test_non_admin_cannot_grant_roles() {
+    let (env, _contract_id, admin, client) = setup_initialized_contract();
+    let attacker = Address::generate(&env);
+    let victim = Address::generate(&env);
+
+    client.grant_role(&admin, &attacker, &Role::User);
+    client.grant_role(&attacker, &victim, &Role::Admin);
+}
+
+// ---------------------------------------------------------------------------
+// 9. Edge case tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_role_overwrite() {
+    let (env, _contract_id, admin, client) = setup_initialized_contract();
+    let user = Address::generate(&env);
+
+    client.grant_role(&admin, &user, &Role::User);
+    assert!(client.has_role(&user, &Role::User));
+
+    client.grant_role(&admin, &user, &Role::Moderator);
+    assert!(client.has_role(&user, &Role::Moderator));
+    assert!(!client.has_role(&user, &Role::User));
+}
+
+#[test]
+#[should_panic(expected = "No role assigned")]
+fn test_get_role_unassigned_panics() {
+    let (env, _contract_id, _admin, client) = setup_initialized_contract();
+    let unassigned = Address::generate(&env);
+    client.get_role(&unassigned);
+}
+
+#[test]
+fn test_cooldown_zero_period() {
+    let (env, _contract_id, admin, client) = setup_initialized_contract();
+
+    client.set_cooldown(&admin, &0);
+
+    env.ledger().with_mut(|li| li.timestamp = 100);
+    client.cooldown_action(&admin);
+
+    env.ledger().with_mut(|li| li.timestamp = 100);
+    let result = client.cooldown_action(&admin);
+    assert_eq!(result, 100);
+}
+
+#[test]
+fn test_time_lock_zero_allows_immediate() {
+    let (env, _contract_id, admin, client) = setup_initialized_contract();
+
+    client.set_time_lock(&admin, &0);
+
+    env.ledger().with_mut(|li| li.timestamp = 1);
+    let result = client.time_locked_action(&admin);
+    assert_eq!(result, 1);
+}
+
+#[test]
+fn test_state_default_is_active() {
+    let (_env, _contract_id, _admin, client) = setup_initialized_contract();
+    assert_eq!(client.get_state(), 0);
+}
+
+#[test]
+fn test_revoke_nonexistent_role() {
+    let (env, _contract_id, admin, client) = setup_initialized_contract();
+    let user = Address::generate(&env);
+    client.revoke_role(&admin, &user);
+}
+
+#[test]
+#[should_panic(expected = "Not admin")]
+fn test_non_admin_cannot_set_state() {
+    let (env, _contract_id, admin, client) = setup_initialized_contract();
+    let user = Address::generate(&env);
+    client.grant_role(&admin, &user, &Role::User);
+    client.set_state(&user, &ContractState::Paused);
+}
+
+#[test]
+#[should_panic(expected = "Not admin")]
+fn test_non_admin_cannot_set_time_lock() {
+    let (env, _contract_id, admin, client) = setup_initialized_contract();
+    let user = Address::generate(&env);
+    client.grant_role(&admin, &user, &Role::User);
+    client.set_time_lock(&user, &1000);
+}
+
+#[test]
+#[should_panic(expected = "Not admin")]
+fn test_non_admin_cannot_set_cooldown() {
+    let (env, _contract_id, admin, client) = setup_initialized_contract();
+    let user = Address::generate(&env);
+    client.grant_role(&admin, &user, &Role::User);
+    client.set_cooldown(&user, &100);
+}
